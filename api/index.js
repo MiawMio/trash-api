@@ -23,7 +23,7 @@ const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Endpoint untuk mendapatkan data dompet (tidak ada perubahan)
+// Endpoint untuk mendapatkan data dompet
 app.get('/api/wallet/:userId', async (req, res) => {
   console.log(`[GET /api/wallet/:userId] Request for userId: ${req.params.userId}`);
   try {
@@ -50,7 +50,7 @@ app.get('/api/wallet/:userId', async (req, res) => {
   }
 });
 
-// Endpoint BARU: Untuk mendapatkan kategori sampah
+// Endpoint untuk mendapatkan kategori sampah
 app.get('/api/waste-categories', async (req, res) => {
   console.log(`[GET /api/waste-categories] Request received.`);
   try {
@@ -67,7 +67,7 @@ app.get('/api/waste-categories', async (req, res) => {
 });
 
 
-// Endpoint DIMODIFIKASI: User mengajukan setoran (status pending)
+// Endpoint User mengajukan setoran (status pending)
 app.post('/api/submissions', async (req, res) => {
   console.log('[POST /api/submissions] Request received with body:', req.body);
   try {
@@ -90,6 +90,7 @@ app.post('/api/submissions', async (req, res) => {
     const { price_per_gram: pricePerGram, name: categoryName } = categoryDoc.data();
     const totalPrice = weightInGrams * pricePerGram;
 
+    // INI BAGIAN PENTINGNYA
     await db.collection('wasteSubmissions').add({
       user_id: userId,
       user_name: userDoc.data().name || 'Unknown User',
@@ -109,7 +110,7 @@ app.post('/api/submissions', async (req, res) => {
   }
 });
 
-// Endpoint BARU: Admin menyetujui setoran
+// Endpoint Admin menyetujui setoran
 app.post('/api/submissions/:submissionId/approve', async (req, res) => {
   console.log(`[POST /approve] Approving submission: ${req.params.submissionId}`);
   try {
@@ -132,7 +133,6 @@ app.post('/api/submissions/:submissionId/approve', async (req, res) => {
     }
     const walletRef = walletQuery.docs[0].ref;
 
-    // Update saldo dan tambahkan transaksi dalam satu batch
     const batch = db.batch();
     batch.update(walletRef, {
       balance: admin.firestore.FieldValue.increment(totalPrice),
@@ -161,7 +161,7 @@ app.post('/api/submissions/:submissionId/approve', async (req, res) => {
   }
 });
 
-// Endpoint BARU: Admin menolak setoran
+// Endpoint Admin menolak setoran
 app.post('/api/submissions/:submissionId/reject', async (req, res) => {
   console.log(`[POST /reject] Rejecting submission: ${req.params.submissionId}`);
   try {
