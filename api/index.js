@@ -90,7 +90,6 @@ app.post('/api/submissions', async (req, res) => {
     const { price_per_gram: pricePerGram, name: categoryName } = categoryDoc.data();
     const totalPrice = weightInGrams * pricePerGram;
 
-    // INI BAGIAN PENTINGNYA
     await db.collection('wasteSubmissions').add({
       user_id: userId,
       user_name: userDoc.data().name || 'Unknown User',
@@ -98,7 +97,7 @@ app.post('/api/submissions', async (req, res) => {
       category_name: categoryName,
       weight_in_grams: weightInGrams,
       total_price: totalPrice,
-      status: 'pending', // Status awal adalah 'pending'
+      status: 'pending',
       created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
