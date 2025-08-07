@@ -71,11 +71,11 @@ app.post('/api/submissions', async (req, res) => {
   }
 });
 
-// ENDPOINT APPROVE (VERSI DIAGNOSTIK)
+// ENDPOINT APPROVE (VERSI PRODUKSI FINAL)
 app.post('/api/confirm-submission', async (req, res) => {
   try {
     const { submissionId } = req.body;
-    console.log(`[POST /confirm-submission] DIAGNOSTIC: Approving submission: ${submissionId}`);
+    console.log(`[POST /confirm-submission] PRODUCTION: Approving submission: ${submissionId}`);
 
     if (!submissionId) {
         return res.status(400).send({ error: 'submissionId is required.' });
@@ -87,21 +87,45 @@ app.post('/api/confirm-submission', async (req, res) => {
     if (!submissionDoc.exists) {
       return res.status(404).send({ error: 'Submission not found.' });
     }
-     if (submissionDoc.data().status !== 'pending') {
+    if (submissionDoc.data().status !== 'pending') {
       return res.status(400).send({ error: 'Submission has already been processed.' });
     }
 
-    // Hanya membaca data, tidak melakukan penulisan apa pun
-    const { user_id: userId } = submissionDoc.data();
+    const { user_id: userId, total_price: totalPrice, category_name: categoryName, weight_in_grams: weightInGrams } = submissionDoc.data();
     const walletQuery = await db.collection('wallets').where('user_id', '==', userId).limit(1).get();
     if (walletQuery.empty) {
         return res.status(404).send({ error: 'Wallet not found for this user.' });
     }
+    const walletRef = walletQuery.docs[0].ref;
+
+    // Menggunakan batch untuk memastikan semua operasi berhasil atau semua gagal
+    const batch = db.batch();
+
+    // 1. Update saldo dompet
+    batch.update(walletRef, {
+        balance: admin.firestore.FieldValue.increment(totalPrice),
+        last_updated: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 2. Buat catatan transaksi baru
+    const transactionRef = walletRef.collection('transactions').doc();
+    batch.set(transactionRef, {
+        amount: totalPrice,
+        type: 'credit',
+        description: `Setor ${categoryName} (${weightInGrams} gram)`,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 3. Update status pengajuan menjadi 'approved'
+    batch.update(submissionRef, {
+        status: 'approved',
+        processed_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Jalankan semua operasi
+    await batch.commit();
     
-    // Jika kode berhasil sampai di sini, berarti proses pembacaan aman.
-    console.log(`[POST /confirm-submission] DIAGNOSTIC: Found wallet for user ${userId}.`);
-    
-    return res.status(200).send({ success: true, message: 'DIAGNOSTIC SUCCESS: Read operations are OK.' });
+    return res.status(200).send({ success: true, message: 'Submission approved and balance updated.' });
   } catch (error) {
     console.error('[POST /confirm-submission] Error:', error);
     return res.status(500).send({ error: 'Internal Server Error' });
