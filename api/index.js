@@ -90,6 +90,7 @@ app.post('/api/submissions', async (req, res) => {
     const { price_per_gram: pricePerGram, name: categoryName } = categoryDoc.data();
     const totalPrice = weightInGrams * pricePerGram;
 
+    // INI BAGIAN PENTINGNYA
     await db.collection('wasteSubmissions').add({
       user_id: userId,
       user_name: userDoc.data().name || 'Unknown User',
@@ -97,7 +98,7 @@ app.post('/api/submissions', async (req, res) => {
       category_name: categoryName,
       weight_in_grams: weightInGrams,
       total_price: totalPrice,
-      status: 'pending',
+      status: 'pending', // Status awal adalah 'pending'
       created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
@@ -110,7 +111,7 @@ app.post('/api/submissions', async (req, res) => {
 });
 
 // Endpoint Admin menyetujui setoran
-app.post('api/submissions/:submissionId/approve', async (req, res) => {
+app.post('/api/submissions/:submissionId/approve', async (req, res) => {
   console.log(`[POST /approve] Approving submission: ${req.params.submissionId}`);
   try {
     const submissionId = req.params.submissionId;
@@ -161,7 +162,7 @@ app.post('api/submissions/:submissionId/approve', async (req, res) => {
 });
 
 // Endpoint Admin menolak setoran
-app.post('api/submissions/:submissionId/reject', async (req, res) => {
+app.post('/api/submissions/:submissionId/reject', async (req, res) => {
   console.log(`[POST /reject] Rejecting submission: ${req.params.submissionId}`);
   try {
     const submissionId = req.params.submissionId;
