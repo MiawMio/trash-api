@@ -71,14 +71,12 @@ app.post('/api/submissions', async (req, res) => {
   }
 });
 
-// ENDPOINT APPROVE (VERSI DEBUG)
+// ENDPOINT APPROVE (VERSI PRODUKSI)
 app.post('/api/confirm-submission', async (req, res) => {
   try {
     const { submissionId } = req.body;
-    console.log(`[POST /confirm-submission] DEBUG MODE: Approving submission: ${submissionId}`);
+    console.log(`[POST /confirm-submission] PRODUCTION MODE: Approving submission: ${submissionId}`);
 
-    // SEMUA LOGIKA DATABASE DINONAKTIFKAN UNTUK SEMENTARA
-    /*
     if (!submissionId) {
         return res.status(400).send({ error: 'submissionId is required.' });
     }
@@ -120,9 +118,8 @@ app.post('/api/confirm-submission', async (req, res) => {
     });
 
     await batch.commit();
-    */
     
-    return res.status(200).send({ success: true, message: 'DEBUG SUCCESSFUL: Submission approved.' });
+    return res.status(200).send({ success: true, message: 'Submission approved and balance updated.' });
   } catch (error) {
     console.error('[POST /confirm-submission] Error:', error);
     return res.status(500).send({ error: 'Internal Server Error' });
