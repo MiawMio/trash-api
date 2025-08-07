@@ -22,7 +22,7 @@ const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Endpoint untuk mendapatkan kategori sampah (TIDAK BERUBAH)
+// Endpoint untuk mendapatkan kategori sampah
 app.get('/api/waste-categories', async (req, res) => {
   try {
     const snapshot = await db.collection('wasteCategories').get();
@@ -36,7 +36,7 @@ app.get('/api/waste-categories', async (req, res) => {
   }
 });
 
-// Endpoint User mengajukan setoran (TIDAK BERUBAH)
+// Endpoint User mengajukan setoran
 app.post('/api/submissions', async (req, res) => {
   try {
     const { userId, categoryId, weightInGrams } = req.body;
@@ -72,10 +72,10 @@ app.post('/api/submissions', async (req, res) => {
 });
 
 // ENDPOINT BARU: Menyetujui setoran
-app.post('/api/approveSubmission', async (req, res) => {
+app.post('/api/confirm-submission', async (req, res) => {
   try {
     const { submissionId } = req.body;
-    console.log(`[POST /approveSubmission] Approving submission: ${submissionId}`);
+    console.log(`[POST /confirm-submission] Approving submission: ${submissionId}`);
 
     if (!submissionId) {
         return res.status(400).send({ error: 'submissionId is required.' });
@@ -120,7 +120,7 @@ app.post('/api/approveSubmission', async (req, res) => {
     await batch.commit();
     return res.status(200).send({ success: true, message: 'Submission approved and balance updated.' });
   } catch (error) {
-    console.error('[POST /approveSubmission] Error:', error);
+    console.error('[POST /confirm-submission] Error:', error);
     return res.status(500).send({ error: 'Internal Server Error' });
   }
 });
