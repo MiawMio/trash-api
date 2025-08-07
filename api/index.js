@@ -3,14 +3,16 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 
 // Konfigurasi Firebase Admin SDK
-// Kita akan menggunakan environment variable di Vercel untuk ini
 const serviceAccount = JSON.parse(
   Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('ascii')
 );
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+// Hindari inisialisasi ganda
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+}
 
 const db = admin.firestore();
 const app = express();
@@ -19,8 +21,9 @@ const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json());
 
-// Endpoint API untuk mendapatkan data dompet
-app.get('/api/wallet/:userId', async (req, res) => {
+// Endpoint untuk mendapatkan data dompet
+// Path diubah dari '/api/wallet/:userId' menjadi '/wallet/:userId'
+app.get('/wallet/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
     const walletQuery = await db.collection('wallets').where('user_id', '==', userId).limit(1).get();
@@ -51,16 +54,16 @@ app.get('/api/wallet/:userId', async (req, res) => {
   }
 });
 
-app.post('/api/submissions', async (req, res) => {
+// Endpoint untuk submission sampah
+// Path diubah dari '/api/submissions' menjadi '/submissions'
+app.post('/submissions', async (req, res) => {
   try {
-    // 1. Ambil data yang dikirim dari aplikasi Flutter
     const { userId, categoryId, weightInGrams } = req.body;
 
     if (!userId || !categoryId || !weightInGrams) {
       return res.status(400).send({ error: 'Missing required fields: userId, categoryId, weightInGrams' });
     }
 
-    // 2. Ambil data kategori sampah untuk mendapatkan harga
     const categoryDoc = await db.collection('wasteCategories').doc(categoryId).get();
     if (!categoryDoc.exists) {
       return res.status(404).send({ error: 'Waste category not found.' });
@@ -68,10 +71,8 @@ app.post('/api/submissions', async (req, res) => {
     const pricePerGram = categoryDoc.data().price_per_gram;
     const categoryName = categoryDoc.data().name;
 
-    // 3. Hitung total harga
     const totalPrice = weightInGrams * pricePerGram;
 
-    // 4. Simpan data submission ke collection 'wasteSubmissions'
     const submissionRef = await db.collection('wasteSubmissions').add({
       user_id: userId,
       category_id: categoryId,
@@ -80,7 +81,6 @@ app.post('/api/submissions', async (req, res) => {
       created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // 5. Update saldo di 'wallets' dan buat transaksi
     const walletQuery = await db.collection('wallets').where('user_id', '==', userId).limit(1).get();
     if (walletQuery.empty) {
       return res.status(404).send({ error: 'Wallet not found for this user.' });
@@ -88,13 +88,11 @@ app.post('/api/submissions', async (req, res) => {
     const walletDoc = walletQuery.docs[0];
     const walletRef = walletDoc.ref;
 
-    // Gunakan FieldValue.increment() untuk menambah saldo dengan aman
     await walletRef.update({
       balance: admin.firestore.FieldValue.increment(totalPrice),
       last_updated: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Buat catatan transaksi baru di sub-collection
     await walletRef.collection('transactions').add({
       amount: totalPrice,
       type: 'credit',
@@ -110,4 +108,6 @@ app.post('/api/submissions', async (req, res) => {
   }
 });
 
+
+// Export aplikasi Express agar Vercel bisa menjalankannya
 module.exports = app;
