@@ -71,14 +71,14 @@ app.post('/api/submissions', async (req, res) => {
   }
 });
 
-// ENDPOINT BARU & GABUNGAN untuk approve/reject
-app.post('/api/submissions/process', async (req, res) => {
+// ENDPOINT BARU: Menyetujui setoran
+app.post('/api/approveSubmission', async (req, res) => {
   try {
-    const { submissionId, action } = req.body; // Mengambil data dari body
-    console.log(`[POST /process] Processing submission: ${submissionId} with action: ${action}`);
+    const { submissionId } = req.body;
+    console.log(`[POST /approveSubmission] Approving submission: ${submissionId}`);
 
-    if (!submissionId || !action || !['approve', 'reject'].includes(action)) {
-        return res.status(400).send({ error: 'Invalid submissionId or action provided.' });
+    if (!submissionId) {
+        return res.status(400).send({ error: 'submissionId is required.' });
     }
 
     const submissionRef = db.collection('wasteSubmissions').doc(submissionId);
@@ -91,44 +91,67 @@ app.post('/api/submissions/process', async (req, res) => {
       return res.status(400).send({ error: 'Submission has already been processed.' });
     }
 
-    if (action === 'approve') {
-        const { user_id: userId, total_price: totalPrice, category_name: categoryName, weight_in_grams: weightInGrams } = submissionDoc.data();
-        const walletQuery = await db.collection('wallets').where('user_id', '==', userId).limit(1).get();
-        if (walletQuery.empty) {
-            return res.status(404).send({ error: 'Wallet not found for this user.' });
-        }
-        const walletRef = walletQuery.docs[0].ref;
-
-        const batch = db.batch();
-        batch.update(walletRef, {
-            balance: admin.firestore.FieldValue.increment(totalPrice),
-            last_updated: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        
-        const transactionRef = walletRef.collection('transactions').doc();
-        batch.set(transactionRef, {
-            amount: totalPrice,
-            type: 'credit',
-            description: `Setor ${categoryName} (${weightInGrams} gram)`,
-            created_at: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-        batch.update(submissionRef, {
-            status: 'approved',
-            processed_at: admin.firestore.FieldValue.serverTimestamp()
-        });
-        
-        await batch.commit();
-        return res.status(200).send({ success: true, message: 'Submission approved and balance updated.' });
-    } else { // action === 'reject'
-        await submissionRef.update({
-            status: 'rejected',
-            processed_at: admin.firestore.FieldValue.serverTimestamp()
-        });
-        return res.status(200).send({ success: true, message: 'Submission rejected.' });
+    const { user_id: userId, total_price: totalPrice, category_name: categoryName, weight_in_grams: weightInGrams } = submissionDoc.data();
+    const walletQuery = await db.collection('wallets').where('user_id', '==', userId).limit(1).get();
+    if (walletQuery.empty) {
+        return res.status(404).send({ error: 'Wallet not found for this user.' });
     }
+    const walletRef = walletQuery.docs[0].ref;
+
+    const batch = db.batch();
+    batch.update(walletRef, {
+        balance: admin.firestore.FieldValue.increment(totalPrice),
+        last_updated: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const transactionRef = walletRef.collection('transactions').doc();
+    batch.set(transactionRef, {
+        amount: totalPrice,
+        type: 'credit',
+        description: `Setor ${categoryName} (${weightInGrams} gram)`,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    batch.update(submissionRef, {
+        status: 'approved',
+        processed_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    await batch.commit();
+    return res.status(200).send({ success: true, message: 'Submission approved and balance updated.' });
   } catch (error) {
-    console.error('[POST /process] Error:', error);
+    console.error('[POST /approveSubmission] Error:', error);
+    return res.status(500).send({ error: 'Internal Server Error' });
+  }
+});
+
+// ENDPOINT BARU: Menolak setoran
+app.post('/api/rejectSubmission', async (req, res) => {
+  try {
+    const { submissionId } = req.body;
+    console.log(`[POST /rejectSubmission] Rejecting submission: ${submissionId}`);
+
+     if (!submissionId) {
+        return res.status(400).send({ error: 'submissionId is required.' });
+    }
+
+    const submissionRef = db.collection('wasteSubmissions').doc(submissionId);
+    const submissionDoc = await submissionRef.get();
+
+    if (!submissionDoc.exists) {
+      return res.status(404).send({ error: 'Submission not found.' });
+    }
+     if (submissionDoc.data().status !== 'pending') {
+      return res.status(400).send({ error: 'Submission has already been processed.' });
+    }
+
+    await submissionRef.update({
+        status: 'rejected',
+        processed_at: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return res.status(200).send({ success: true, message: 'Submission rejected.' });
+  } catch (error) {
+    console.error('[POST /rejectSubmission] Error:', error);
     return res.status(500).send({ error: 'Internal Server Error' });
   }
 });
