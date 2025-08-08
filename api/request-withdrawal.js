@@ -19,11 +19,13 @@ try {
 const db = admin.firestore();
 const app = express();
 
+// Konfigurasi Express
 app.use(cors({ origin: true }));
 app.use(express.json());
 
 // Endpoint untuk mengajukan penarikan
-app.post('/api/request-withdrawal', async (req, res) => {
+// Vercel akan otomatis mengekspos ini sebagai POST /api/request-withdrawal
+app.post('*', async (req, res) => {
   try {
     const { userId, amount } = req.body;
     console.log(`[HANDLER /api/request-withdrawal] Request from ${userId} for ${amount}`);
