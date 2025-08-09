@@ -18,11 +18,18 @@ const db = admin.firestore();
 
 // Export fungsi serverless
 module.exports = async (req, res) => {
+  // Izinkan CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).send({ error: 'Only POST method is allowed' });
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).send({ error: 'Only POST method is allowed' });
+  }
 
   try {
     const { submissionId } = req.body;
@@ -44,10 +51,10 @@ module.exports = async (req, res) => {
 
     const { user_id: userId, total_price: totalPrice, category_name: categoryName, weight_in_grams: weightInGrams } = submissionDoc.data();
     
-    // PENGECEKAN BARU: Pastikan total_price adalah angka
+    // Pengecekan untuk memastikan totalPrice adalah angka
     if (typeof totalPrice !== 'number') {
-        console.error(`Invalid or missing 'total_price' for submission ${submissionId}. Found:`, totalPrice);
-        return res.status(400).send({ error: `Data 'total_price' tidak valid untuk setoran ini.` });
+      console.error(`Invalid 'total_price' for submission ${submissionId}. Found:`, totalPrice);
+      return res.status(400).send({ error: `Data 'total_price' tidak valid untuk setoran ini.` });
     }
 
     const walletQuery = await db.collection('wallets').where('user_id', '==', userId).limit(1).get();
@@ -59,18 +66,22 @@ module.exports = async (req, res) => {
     // Lakukan operasi dalam batch agar aman
     const batch = db.batch();
     
+    // 1. Update saldo dompet
     batch.update(walletRef, {
         balance: admin.firestore.FieldValue.increment(totalPrice),
         last_updated: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    batch.set(walletRef.collection('transactions').doc(), {
-        amount: totalPrice,
+    // 2. Buat catatan transaksi baru
+    const transactionRef = walletRef.collection('transactions').doc();
+    batch.set(transactionRef, {
+        amount: totalPrice, // Memastikan totalPrice yang benar digunakan di sini
         type: 'credit',
         description: `Setor ${categoryName} (${weightInGrams} gram)`,
         created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // 3. Update status pengajuan
     batch.update(submissionRef, {
         status: 'approved',
         processed_at: admin.firestore.FieldValue.serverTimestamp()
