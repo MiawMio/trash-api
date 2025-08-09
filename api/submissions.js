@@ -16,53 +16,82 @@ try {
 
 const db = admin.firestore();
 
+// Export fungsi serverless
 module.exports = async (req, res) => {
+  // Izinkan CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).send({ error: 'Only POST method is allowed' });
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).send({ error: 'Only POST method is allowed' });
+  }
 
   try {
-    const { userId, categoryId, weightInGrams } = req.body;
-    console.log(`[HANDLER /api/submissions] Request received:`, req.body);
+    const { submissionId } = req.body;
+    console.log(`[HANDLER /api/approve] Approving submission: ${submissionId}`);
 
-    if (!userId || !categoryId || !weightInGrams) {
-      return res.status(400).send({ error: 'Missing required fields.' });
+    if (!submissionId) {
+      return res.status(400).send({ error: 'submissionId is required.' });
     }
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-        return res.status(404).send({ error: 'User not found.' });
+
+    const submissionRef = db.collection('wasteSubmissions').doc(submissionId);
+    const submissionDoc = await submissionRef.get();
+
+    if (!submissionDoc.exists) {
+      return res.status(404).send({ error: 'Submission not found.' });
     }
-    const categoryDoc = await db.collection('wasteCategories').doc(categoryId).get();
-    if (!categoryDoc.exists) {
-      return res.status(404).send({ error: 'Waste category not found.' });
+    if (submissionDoc.data().status !== 'pending') {
+      return res.status(400).send({ error: 'Submission has already been processed.' });
     }
+
+    const { user_id: userId, total_price: totalPrice, category_name: categoryName, weight_in_grams: weightInGrams } = submissionDoc.data();
     
-    // ================== BAGIAN YANG DIPERBAIKI ==================
-    // Pastikan kedua nilai adalah angka sebelum dikalikan
-    const pricePerGram = Number(categoryDoc.data().price_per_gram || 0);
-    const weight = Number(weightInGrams || 0);
-    const totalPrice = weight * pricePerGram;
-    // ==========================================================
+    // Pengecekan untuk memastikan totalPrice adalah angka
+    if (typeof totalPrice !== 'number') {
+      console.error(`Invalid 'total_price' for submission ${submissionId}. Found:`, totalPrice);
+      return res.status(400).send({ error: `Data 'total_price' tidak valid untuk setoran ini.` });
+    }
 
-    const categoryName = categoryDoc.data().name;
+    const walletQuery = await db.collection('wallets').where('user_id', '==', userId).limit(1).get();
+    if (walletQuery.empty) {
+        return res.status(404).send({ error: 'Wallet not found for this user.' });
+    }
+    const walletRef = walletQuery.docs[0].ref;
 
-    await db.collection('wasteSubmissions').add({
-      user_id: userId,
-      user_name: userDoc.data().name || 'Unknown User',
-      category_id: categoryId,
-      category_name: categoryName,
-      weight_in_grams: weight,
-      total_price: totalPrice, // Sekarang dijamin angka
-      status: 'pending',
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    // Lakukan operasi dalam batch agar aman
+    const batch = db.batch();
+    
+    // 1. Update saldo dompet
+    batch.update(walletRef, {
+        balance: admin.firestore.FieldValue.increment(totalPrice),
+        last_updated: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return res.status(200).send({ success: true, message: 'Submission created and is pending approval.' });
+    // 2. Buat catatan transaksi baru
+    const transactionRef = walletRef.collection('transactions').doc();
+    batch.set(transactionRef, {
+        amount: totalPrice, // Memastikan totalPrice yang benar digunakan di sini
+        type: 'credit',
+        description: `Setor ${categoryName} (${weightInGrams} gram)`,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 3. Update status pengajuan
+    batch.update(submissionRef, {
+        status: 'approved',
+        processed_at: admin.firestore.FieldValue.serverTimestamp()
+    });
     
+    await batch.commit();
+    
+    return res.status(200).send({ success: true, message: 'Submission approved.' });
   } catch (error) {
-    console.error('[HANDLER /api/submissions] Error:', error);
+    console.error('[HANDLER /api/approve] Error:', error);
     return res.status(500).send({ error: 'Internal Server Error' });
   }
 };
