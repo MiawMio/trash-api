@@ -1,62 +1,54 @@
-const admin = require('firebase-admin');
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
-// Inisialisasi Firebase Admin
-try {
-  if (!admin.apps.length) {
-    const serviceAccount = JSON.parse(
-      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('ascii')
-    );
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-  }
-} catch (error) {
-  console.error("Firebase Admin initialization error:", error);
+const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+
+if (!getApps().length) {
+  initializeApp({
+    credential: cert(serviceAccount)
+  });
 }
 
-const db = admin.firestore();
+const db = getFirestore();
 
-// Export fungsi serverless
-module.exports = async (req, res) => {
-  // Izinkan CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
+export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).send({ error: 'Only GET method is allowed' });
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    console.log(`[HANDLER /api/history] Request received.`);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 8; // Default 8 data per halaman
+    const offset = (page - 1) * limit;
+
+    const historyRef = db.collection('wasteSubmissions').where('status', 'in', ['approved', 'rejected']);
+
+    // 1. Ambil total data untuk menghitung total halaman
+    const totalSnapshot = await historyRef.count().get();
+    const totalItems = totalSnapshot.data().count;
+    const totalPages = Math.ceil(totalItems / limit);
+
+    // 2. Ambil data untuk halaman yang diminta
+    const historySnapshot = await historyRef
+                                  .orderBy('processed_at', 'desc')
+                                  .limit(limit)
+                                  .offset(offset)
+                                  .get();
     
-    // Ambil semua submission yang statusnya BUKAN 'pending'
-    const snapshot = await db.collection('wasteSubmissions')
-                              .where('status', 'in', ['approved', 'rejected'])
-                              .orderBy('processed_at', 'desc') // Urutkan berdasarkan waktu diproses
-                              .get();
-
-    if (snapshot.empty) {
-      return res.status(200).send([]); // Kirim array kosong jika tidak ada riwayat
-    }
-
-    const history = snapshot.docs.map(doc => {
-        const data = doc.data();
-        // Konversi Timestamp ke string agar mudah di-parse di Dart
-        if (data.processed_at && data.processed_at.toDate) {
-            data.processed_at = data.processed_at.toDate().toISOString();
-        }
-        return { id: doc.id, ...data };
+    const historyList = historySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // 3. Kembalikan data beserta informasi halaman
+    return res.status(200).json({
+      totalPages: totalPages,
+      currentPage: page,
+      data: historyList
     });
 
-    return res.status(200).send(history);
-
   } catch (error) {
-    console.error('[HANDLER /api/history] Error:', error);
-    return res.status(500).send({ error: 'Internal Server Error' });
+    console.error('Error fetching submission history:', error);
+    return res.status(500).json({ error: 'Failed to load submission history', details: error.message });
   }
-};
+}
