@@ -1,5 +1,5 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
 const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
 
@@ -18,29 +18,45 @@ export default async function handler(req, res) {
 
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 8; // Default 8 data per halaman
+    const limit = parseInt(req.query.limit) || 8;
+    const searchQuery = req.query.search || '';
+    const dateQuery = req.query.date; // <-- Pastikan baris ini ada
+
     const offset = (page - 1) * limit;
 
-    const historyRef = db.collection('withdrawalRequests').where('status', 'in', ['approved', 'rejected']);
+    let historyRef = db.collection('withdrawalRequests').where('status', 'in', ['approved', 'rejected']);
     
-    // 1. Ambil total data untuk menghitung total halaman
-    const totalSnapshot = await historyRef.count().get();
+    if (searchQuery) {
+      historyRef = historyRef.where('user_name', '>=', searchQuery)
+                             .where('user_name', '<=', searchQuery + '\uf8ff');
+    }
+
+    // <-- Pastikan blok 'if (dateQuery)' ini ada
+    if (dateQuery) {
+      const startDate = new Date(dateQuery);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 1);
+
+      historyRef = historyRef.where('processed_at', '>=', Timestamp.fromDate(startDate))
+                             .where('processed_at', '<', Timestamp.fromDate(endDate));
+    }
+    
+    // ... sisa kode ...
+    const orderedQuery = historyRef.orderBy('processed_at', 'desc');
+    // ... sisa kode ...
+
+    const totalSnapshot = await orderedQuery.count().get();
     const totalItems = totalSnapshot.data().count;
     const totalPages = Math.ceil(totalItems / limit);
 
-    // 2. Ambil data untuk halaman yang diminta
-    const historySnapshot = await historyRef
-                                  .orderBy('processed_at', 'desc')
+    const historySnapshot = await orderedQuery
                                   .limit(limit)
                                   .offset(offset)
                                   .get();
     
-    const historyList = historySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const historyList = historySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // 3. Kembalikan data beserta informasi halaman
     return res.status(200).json({
       totalPages: totalPages,
       currentPage: page,
